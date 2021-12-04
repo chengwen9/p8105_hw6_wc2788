@@ -9,12 +9,13 @@ output: github_document
 knitr::opts_chunk$set(echo = TRUE)
 library(readr)
 library(tidyverse)
+library(modelr)
+library(p8105.datasets)
 ```
 
 ## Problem 1
-
+### Load and clean data
 ```{r}
-#load and clean data
 birthweight <- read_csv("birthweight.csv") %>%
   janitor::clean_names() %>%
 #convert numeric to factor
@@ -36,18 +37,114 @@ sum(is.na(birthweight))
 ```
 There are `nrow(birthweight)` observations and `ncol(birthweight)` variables in this dataset, and no missing value.
 
+### Propose a regression model
 ```{r}
-#propose a regression model
 fit = lm(bwt ~ babysex + blength + delwt + fincome + frace + mrace + wtgain, data = birthweight) 
 summary(fit)
 ```
 
+### Make plot
 ```{r}
 birthweight %>% 
   modelr::add_residuals(fit) %>% 
   modelr::add_predictions(fit) %>% 
   ggplot(aes(x = pred, y = resid)) + 
   geom_point()
+```
+
+### Compare model
+```{r}
+# One using length at birth and gestational age as predictors (main effects only)
+model_1 <- lm(bwt ~ blength + gaweeks, data = birthweight)
+
+# One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+model_2 <- lm(bwt ~ bhead * blength * babysex, data = birthweight)
+```
+
+### Cross Validation
+```{r}
+#CV using modelr
+cv_df = 
+  crossv_mc(birthweight, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+#fit models and obtain RMSEs using mutate + map & map2
+cv_df = 
+  cv_df %>% 
+  mutate(
+   fit = map(train, ~lm(bwt ~ babysex + blength + delwt + fincome + frace + mrace + wtgain, data = .x)),
+   model_1 = map(train, ~lm(bwt ~ gaweeks + blength, data = .x)),
+   model_2 = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))) %>% 
+  mutate(
+    rmse_fit = map2_dbl(fit, test, ~rmse(model = .x, data = .y)),
+    rmse_model_1 = map2_dbl(model_1, test, ~rmse(model = .x, data = .y)),
+    rmse_model_2 = map2_dbl(model_2, test, ~rmse(model = .x, data = .y))
+  )
+```
+
+### Make plot
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>%              
+  pivot_longer(
+    everything(),
+    names_to = "model", 
+    values_to = "rmse",
+    names_prefix = "rmse_") %>% 
+  mutate(model = fct_inorder(model)) %>%       
+  ggplot(aes(x = model, 
+             y = rmse, 
+             color = model, 
+             fill = model)) + 
+  geom_violin(alpha = 0.5) +
+  labs(x = "Model",
+       y = "Root Mean Squared Error",
+       title = "The RMSE Distribution For Each Model") 
+```
+The model_2 has the smallest RMSE, so it is the best fit in these three models. model_1 has the highest RMSE, the fit model has high RMSE compared with model_2, so these two are not best fit.
+
+## Problem 2
+
+### Load data
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+```{r}
+#set a seed for reproducibility
+set.seed(1234)
+
+boot_sample = function(df) {
+  sample_frac(df, replace = TRUE)
+}
+
+#draw 5000 bootstrap samples
+boot_straps = 
+  data_frame(
+    strap_number = 1:5000,
+    strap_sample = rerun(5000, boot_sample(weather_df))
+  )
+
+#analyze bootstrap samples
+bootstrap_results = 
+  boot_straps %>% 
+  mutate(
+    models = map(strap_sample, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap_sample, -models) %>% 
+  unnest(results) 
 ```
 
 
