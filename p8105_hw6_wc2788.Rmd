@@ -35,16 +35,55 @@ birthweight <- read_csv("birthweight.csv") %>%
  #check for missing data
 sum(is.na(birthweight))
 ```
-There are `nrow(birthweight)` observations and `ncol(birthweight)` variables in this dataset, and no missing value.
+There are `r nrow(birthweight)` observations and `r ncol(birthweight)` variables in this dataset, and no missing value.
 
 ### Propose a regression model
+bwt may depends on blength and mrace. We fit that initial model in the following code.
 ```{r}
-fit = lm(bwt ~ babysex + blength + delwt + fincome + frace + mrace + wtgain, data = birthweight) 
+fit = lm(bwt ~ blength + mrace, data = birthweight) 
+
+#tidy output
 summary(fit)
+```
+
+### Diagnostics
+```{r}
+birthweight %>% 
+  modelr::add_residuals(fit) %>% 
+  ggplot(aes(x = blength, y = resid)) + geom_point()
+```
+
+```{r}
+birthweight %>% 
+ggplot(aes(x = blength, y = bwt)) + geom_point()
+```
+longer baby length will have higher baby weight, so blength affects bwt.
+
+```{r}
+birthweight %>% 
+  modelr::add_residuals(fit) %>% 
+  ggplot(aes(x = mrace, y = resid)) + geom_boxplot()
+```
+
+```{r}
+birthweight %>% 
+ggplot(aes(x = mrace, y = bwt)) + geom_boxplot()
+```
+white mother will have higher weight baby compared with other race, black mother' baby will lower weight. So, mrace affects bwt.
+
+### Hypothesis testing
+```{r}
+#null model are a subset of the terms in a more complex alternative model
+fit_null = lm(bwt ~ blength + mrace, data = birthweight)
+fit_alt = lm(bwt ~ blength + mrace + wtgain, data = birthweight)
+
+anova(fit_null, fit_alt) %>% 
+  broom::tidy()
 ```
 
 ### Make plot
 ```{r}
+#model residuals against fitted values
 birthweight %>% 
   modelr::add_residuals(fit) %>% 
   modelr::add_predictions(fit) %>% 
@@ -74,7 +113,7 @@ cv_df =
 cv_df = 
   cv_df %>% 
   mutate(
-   fit = map(train, ~lm(bwt ~ babysex + blength + delwt + fincome + frace + mrace + wtgain, data = .x)),
+   fit = map(train, ~lm(bwt ~ blength + mrace, data = .x)),
    model_1 = map(train, ~lm(bwt ~ gaweeks + blength, data = .x)),
    model_2 = map(train, ~lm(bwt ~ bhead * blength * babysex, data = .x))) %>% 
   mutate(
@@ -103,7 +142,7 @@ cv_df %>%
        y = "Root Mean Squared Error",
        title = "The RMSE Distribution For Each Model") 
 ```
-The model_2 has the smallest RMSE, so it is the best fit in these three models. model_1 has the highest RMSE, the fit model has high RMSE compared with model_2, so these two are not best fit.
+The model_2 has the smallest RMSE, so it is the best fit in these three models. model_1 has the highest RMSE, the fit model has higher RMSE than model_2, so these two are not best fit.
 
 ## Problem 2
 
@@ -157,6 +196,7 @@ bootstrap_samples %>%
     title = "Distribution of R Squared"
   )
 ```
+The distribution of r squared peak is around 0.912 and it is a normal distribution. 
 
 ### 95% CI for log(beta0*beta1) 
 ```{r}
@@ -192,10 +232,11 @@ bootstrap_samples %>%
   ggplot(aes(x = log_b0b1)) + 
   geom_density() +
   labs(
+    x = "log(beta0*beta1)",
     title = "Distribution of log(beta0*beta1)"
   )
 ```
-
+The distribution of log(beta0*beta1) peak is around 2.017 and it is a normal distribution. 
 
 
 
